@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ja" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Invoice Harness — Zero-Cost Qualified Invoice & Auto-Reconciliation Engine</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+  <header class="border-b border-slate-800 bg-slate-900/70 backdrop-blur sticky top-0 z-10">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <span class="px-2.5 py-1 rounded-md bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold">INVOICE HARNESS</span>
+        <h1 class="text-lg font-bold">適格請求書（インボイス）自動発行 ＆ 銀行振込AI消込エンジン</h1>
+      </div>
+      <div class="text-xs text-teal-400 font-mono">Cloudflare Workers + D1 + MCP (¥0/mo)</div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+    <section class="lg:col-span-5 space-y-6">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+        <div class="text-xs text-amber-400 font-semibold uppercase mb-1">1. Issue Qualified Invoice (T-Number)</div>
+        <h2 class="text-lg font-bold mb-3">適格請求書の即時発行</h2>
+        <form id="invForm" class="space-y-3">
+          <input id="client_name" required value="株式会社テックパートナーズ" placeholder="取引先名" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+          <div class="grid grid-cols-2 gap-2">
+            <input id="payer_kana" required value="カ）テツクパートナーズ" placeholder="振込名義カナ" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+            <input id="subtotal" type="number" required value="300000" placeholder="税抜金額 (円)" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <input id="item_title" required value="2026年10月度 AIエージェント開発・技術顧問料" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+          <button type="submit" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2 rounded-lg text-sm transition">
+            インボイス発行（消費税10%自動計算）
+          </button>
+        </form>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+        <div class="text-xs text-teal-400 font-semibold uppercase mb-1">2. Bank Deposit Webhook / Auto-Reconcile</div>
+        <h2 class="text-lg font-bold mb-3">銀行入金Webhook・自動消込シミュレータ</h2>
+        <form id="txForm" class="space-y-3">
+          <div class="grid grid-cols-2 gap-2">
+            <input id="sender_kana" required value="カ)テツクパートナーズ" placeholder="振込依頼人カナ" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+            <input id="amount" type="number" required value="330000" placeholder="着金金額 (税込)" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <button type="submit" class="w-full bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold py-2 rounded-lg text-sm transition">
+            銀行入金データを送信 ➔ AIカナ名義＆手数料差引の自動消込
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <section class="lg:col-span-7 space-y-6">
+      <div class="grid grid-cols-3 gap-3" id="metricsCards"></div>
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+        <h3 class="text-base font-bold mb-3">適格請求書台帳 ＆ リアルタイム消込ステータス</h3>
+        <div id="invoicesList" class="space-y-3 text-sm"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    async function loadDashboard() {
+      const res = await fetch('/api/dashboard');
+      const data = await res.json();
+      const m = data.metrics;
+      document.getElementById('metricsCards').innerHTML = `
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl"><div class="text-xs text-slate-400">請求総額 (税込)</div><div class="text-xl font-bold mt-1">¥${m.total_billed_jpy.toLocaleString()}</div></div>
+        <div class="bg-slate-900 border border-teal-500/30 p-4 rounded-xl"><div class="text-xs text-teal-400">自動消込済</div><div class="text-xl font-bold text-teal-300 mt-1">¥${m.total_reconciled_jpy.toLocaleString()}</div></div>
+        <div class="bg-slate-900 border border-amber-500/30 p-4 rounded-xl"><div class="text-xs text-amber-400">未消込件数</div><div class="text-xl font-bold text-amber-300 mt-1">${m.unpaid_count}件</div></div>
+      `;
+      document.getElementById('invoicesList').innerHTML = data.invoices.map(i => `
+        <div class="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+          <div>
+            <div class="font-bold">${i.invoice_number} — ${i.client_name}</div>
+            <div class="text-xs text-slate-400">${i.item_title} / 登録番号: ${i.registration_number} / カナ: ${i.payer_kana}</div>
+          </div>
+          <div class="text-right">
+            <div class="font-bold text-base">¥${Number(i.total_amount).toLocaleString()}</div>
+            <span class="px-2 py-0.5 rounded text-xs font-bold ${i.status === 'paid' ? 'bg-teal-500/20 text-teal-300 border border-teal-500/40' : 'bg-amber-500/20 text-amber-300'}">${i.status === 'paid' ? '✅ 入金消込済' : '⏳ 入金待ち'}</span>
+          </div>
+        </div>
+      `).join('') || '<div class="text-slate-500 text-xs">まだ請求書がありません</div>';
+    }
+
+    document.getElementById('invForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await fetch('/api/invoices/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_name: document.getElementById('client_name').value,
+          payer_kana: document.getElementById('payer_kana').value,
+          subtotal: Number(document.getElementById('subtotal').value),
+          item_title: document.getElementById('item_title').value,
+        })
+      });
+      await loadDashboard();
+    });
+
+    document.getElementById('txForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await fetch('/api/reconcile/deposit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sender_kana: document.getElementById('sender_kana').value,
+          amount: Number(document.getElementById('amount').value),
+        })
+      });
+      await loadDashboard();
+    });
+
+    loadDashboard();
+  </script>
+</body>
+</html>
